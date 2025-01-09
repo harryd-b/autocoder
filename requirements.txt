@@ -1,0 +1,9 @@
+PyYAML
+tenacity
+flake8
+pytest
+openai
+pytest-mock
+pytest-cov
+pytest-asyncio
+python-dotenv

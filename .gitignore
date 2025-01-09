@@ -1,0 +1,17 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environment
+venv/
+
+# Python env files
+*.env
+
+# Conversation history
+conversation_state.json
+
+# OS-specific cache/log
+*.DS_Store
+*.log

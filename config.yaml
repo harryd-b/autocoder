@@ -1,0 +1,12 @@
+model: "gpt-4"
+
+max_depth: 10
+max_conversation_length: 10
+max_retries: 3
+
+# For tenacity-based retries
+retry_base_seconds: 1.5
+retry_max_seconds: 10
+
+# Where to store conversation states
+conversation_file: "conversation_state.json"
