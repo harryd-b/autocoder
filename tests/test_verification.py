@@ -7,9 +7,8 @@ from verification import (
     run_lint_checks,
     run_tests_on_code,
     DEFAULT_MODEL_SOURCE,  # Imported to patch the default selection
-    OpenAIAPIError,        # If you have it from your code
-    LocalLLMError          # If you have it from your code
 )
+from api_utils import OpenAIAPIError, LocalLLMError
 
 ###############################################################################
 # Tests for verify_code_with_chatgpt (OpenAI path)
