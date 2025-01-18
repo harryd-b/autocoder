@@ -14,20 +14,18 @@ from api_utils import OpenAIAPIError, LocalLLMError
 # Tests for verify_code_with_chatgpt (OpenAI path)
 ###############################################################################
 
-@patch("verification.call_openai_chat_completion")
 def test_verify_code_with_chatgpt_success(mock_api):
+    # EXACT JSON object, no trailing data
     mock_api.return_value = {
-    "choices": [
-        {
+        "choices": [{
             "message": {
-                "content": "{\"complete\": true, \"feedback\": \"All good\"}"
+                "content": '{"complete":true,"feedback":"All good"}'
             }
-        }
-    ]
-}
-
+        }]
+    }
     code = "print('Hello')"
     result = verify_code_with_chatgpt(code)
+    assert result is not None
     assert result["complete"] is True
     assert result["feedback"] == "All good"
 

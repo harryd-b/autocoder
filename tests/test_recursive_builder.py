@@ -83,7 +83,7 @@ async def test_recursive_prompt_question_flow(
         "choices": [{
             "message": {
                 "content": (
-                    "Here is some code: ```python\nprint('Hello')\n```"
+                    "Here is some code: ```python\nprint('Hello')\n```\n"
                     "And a question?\n"
                 )
             }
