@@ -57,16 +57,17 @@ async def test_recursive_prompt_basic_flow(
 
 @pytest.mark.asyncio
 @patch("recursive_builder.DEFAULT_MODEL_SOURCE", new="openai")
+@patch("builtins.input", return_value="Test user answer")
 @patch("recursive_builder.verify_code_with_chatgpt")
 @patch("recursive_builder.run_lint_checks")
 @patch("recursive_builder.run_tests_on_code")
 @patch("recursive_builder.call_openai_chat_completion")
-async def test_recursive_prompt_basic_flow(
+async def test_recursive_prompt_question_flow(
     mock_api,
     mock_tests,
     mock_lint,
     mock_verify,
-    _patched_model_source
+    mock_input
 ):
     """
     Tests a scenario where the model returns both code and a clarifying question.
@@ -137,7 +138,6 @@ async def test_recursive_prompt_basic_flow(
     assert len(history) >= 5
 
     # Check that the clarifying question led to user input
-    # The user answer is the "Test user answer"
     user_entries = [msg for msg in history if msg["role"] == "user"]
     assert any("Test user answer" in msg["content"] for msg in user_entries)
 
