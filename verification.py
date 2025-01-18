@@ -3,7 +3,7 @@
 verification.py
 
 Verifies code snippets by:
-1. Sending them to ChatGPT in "verification mode."
+1. Sending them to a verification model ("local" Triton or OpenAI) in "verification mode."
 2. Running lint checks (flake8).
 3. Running tests (pytest).
 """
@@ -14,13 +14,74 @@ import logging
 import subprocess
 from typing import Any, Dict, Optional
 
-from api_utils import call_openai_chat_completion, GPT_MODEL
-from conversation_manager import ConversationManager
+from api_utils import (
+    GPT_MODEL,
+    config,
+    call_openai_chat_completion,
+    call_local_llama_inference
+)
 
-def verify_code_with_chatgpt(code: str, verification_prompt: str = None) -> Optional[Dict[str, Any]]:
+###############################################################################
+# MODEL SELECTION FOR VERIFICATION
+###############################################################################
+DEFAULT_MODEL_SOURCE = config.get("model_source", "local")  # 'local' or 'openai'
+
+def call_verification_model(code: str, verification_prompt: str) -> str:
     """
-    Sends the generated code to a separate ChatGPT conversation for verification.
-    Returns a JSON dict with {'complete': bool, 'feedback': str} or None on error.
+    Calls the verification model. If config.yaml sets 'model_source: local',
+    we flatten the prompt + code and send to local Triton. Otherwise, we call OpenAI.
+
+    Returns a raw text string response, which is expected to contain JSON.
+    """
+    # Our "system message" content to prime the verification logic
+    system_intro = (
+        "You are ChatGPT in verification mode. "
+        "You will review the submitted code snippet for completeness, correctness, "
+        "and whether it meets typical best practices. Respond in valid JSON."
+    )
+
+    # We unify the user prompt
+    user_content = f"{verification_prompt}\n\n```python\n{code}\n```"
+
+    if DEFAULT_MODEL_SOURCE.lower() == "openai":
+        # Build messages for OpenAI
+        system_message = {
+            "role": "system",
+            "content": system_intro
+        }
+        user_message = {
+            "role": "user",
+            "content": user_content
+        }
+        # Call OpenAI with the typical ChatCompletion format
+        response = call_openai_chat_completion(
+            messages=[system_message, user_message],
+            model=GPT_MODEL
+        )
+        return response["choices"][0]["message"]["content"].strip()
+    else:
+        # Local Triton Llama verification
+        # Flatten system and user content into a single prompt
+        prompt_text = (
+            f"SYSTEM:\n{system_intro}\n\n"
+            f"USER:\n{user_content}\n"
+        )
+        local_responses = call_local_llama_inference([prompt_text])
+        if local_responses:
+            return local_responses[0].strip()
+        return ""
+
+###############################################################################
+# MAIN VERIFICATION LOGIC
+###############################################################################
+
+def verify_code_with_chatgpt(
+    code: str,
+    verification_prompt: str = None
+) -> Optional[Dict[str, Any]]:
+    """
+    Sends the generated code to a verification model (local or OpenAI).
+    Expects a JSON dict with {'complete': bool, 'feedback': str}, or None on error.
 
     :param code: The code snippet to verify
     :param verification_prompt: An optional custom prompt for verification
@@ -32,25 +93,14 @@ def verify_code_with_chatgpt(code: str, verification_prompt: str = None) -> Opti
             "Respond in JSON with fields 'complete' (boolean) and 'feedback' (string)."
         )
 
-    system_message = {
-        "role": "system",
-        "content": (
-            "You are ChatGPT in verification mode. "
-            "You will review the submitted code snippet for completeness, correctness, "
-            "and whether it meets typical best practices. Respond in valid JSON."
-        )
-    }
-    user_message = {
-        "role": "user",
-        "content": f"{verification_prompt}\n\n```python\n{code}\n```"
-    }
-
     try:
-        response = call_openai_chat_completion([system_message, user_message], model=GPT_MODEL)
-        text_content = response["choices"][0]["message"]["content"].strip()
+        raw_response = call_verification_model(code, verification_prompt)
+        if not raw_response:
+            logging.warning("Received empty response from verification model.")
+            return None
 
-        # Extract the first JSON object
-        json_match = re.search(r"\{.*\}", text_content, re.DOTALL)
+        # Attempt to extract the first JSON object from the raw text
+        json_match = re.search(r"\{.*\}", raw_response, re.DOTALL)
         if not json_match:
             logging.warning("Could not find JSON in the verification response.")
             return None
@@ -59,8 +109,9 @@ def verify_code_with_chatgpt(code: str, verification_prompt: str = None) -> Opti
         verification_data = json.loads(json_str)
 
         return verification_data
+
     except Exception as e:
-        logging.error("Verification via ChatGPT failed.", exc_info=True)
+        logging.error("Verification failed.", exc_info=True)
         return None
 
 def run_lint_checks(file_path: str) -> bool:

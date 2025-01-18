@@ -150,7 +150,8 @@ A “sliding window” ensures old messages are trimmed to control token usage.
 Parallelism:
 
 Verifying multiple snippets is done with asyncio.gather.
-Clarifying questions can also be processed in parallel, although real user input is simulated.
+Clarifying questions can also be processed in parallel.
+
 Testing
 Run tests with:
 

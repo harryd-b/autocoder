@@ -7,3 +7,4 @@ pytest-mock
 pytest-cov
 pytest-asyncio
 python-dotenv
+tritonclient[http]

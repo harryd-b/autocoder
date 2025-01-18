@@ -1,11 +1,19 @@
 import pytest
+import json
 from unittest.mock import patch, MagicMock
 
 from verification import (
     verify_code_with_chatgpt,
     run_lint_checks,
-    run_tests_on_code
+    run_tests_on_code,
+    DEFAULT_MODEL_SOURCE,  # Imported to patch the default selection
+    OpenAIAPIError,        # If you have it from your code
+    LocalLLMError          # If you have it from your code
 )
+
+###############################################################################
+# Tests for verify_code_with_chatgpt (OpenAI path)
+###############################################################################
 
 @patch("verification.call_openai_chat_completion")
 def test_verify_code_with_chatgpt_success(mock_api):
@@ -29,6 +37,38 @@ def test_verify_code_with_chatgpt_no_json(mock_api):
     code = "print('Hello')"
     result = verify_code_with_chatgpt(code)
     assert result is None
+
+###############################################################################
+# Tests for verify_code_with_chatgpt (local Triton path)
+###############################################################################
+
+@patch("verification.call_local_llama_inference")
+@patch("verification.DEFAULT_MODEL_SOURCE", new="local")
+def test_verify_code_with_chatgpt_local_success(mock_infer):
+    """
+    Test a successful local verification call, returning valid JSON.
+    """
+    mock_infer.return_value = ['{"complete": true, "feedback": "Local says all good"}']
+    code = "print('Hello from local')"
+    result = verify_code_with_chatgpt(code)
+    assert result is not None
+    assert result["complete"] is True
+    assert result["feedback"] == "Local says all good"
+
+@patch("verification.call_local_llama_inference")
+@patch("verification.DEFAULT_MODEL_SOURCE", new="local")
+def test_verify_code_with_chatgpt_local_no_json(mock_infer):
+    """
+    Test local verification call returning no JSON object in the text.
+    """
+    mock_infer.return_value = ["No JSON here at all"]
+    code = "print('Hello from local')"
+    result = verify_code_with_chatgpt(code)
+    assert result is None
+
+###############################################################################
+# Tests for lint and test checks
+###############################################################################
 
 @patch("subprocess.run")
 def test_run_lint_checks_pass(mock_run):

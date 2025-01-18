@@ -3,6 +3,7 @@
 main.py
 
 Entry point for the Recursive Code Builder application.
+Now uses real user input to answer clarifying questions.
 """
 
 import asyncio
@@ -20,7 +21,7 @@ def setup_logging():
 
 async def main():
     setup_logging()
-    logging.info("=== Recursive Code Builder (Modularized) ===")
+    logging.info("=== Recursive Code Builder (Modularised) ===")
 
     # Load config
     with open("config.yaml", "r", encoding="utf-8") as f:
@@ -28,7 +29,7 @@ async def main():
 
     max_depth = config.get("max_depth", 10)
 
-    # Initialize conversation manager
+    # Initialise conversation manager
     conv_manager = ConversationManager()
 
     # Provide a top-level prompt
@@ -38,21 +39,22 @@ async def main():
         "to produce the code in segments. Each time you have enough details for a "
         "part of the application, produce the code for that part. Then we will verify "
         "it in a separate conversation to ensure completeness. If verified as complete, "
-        "that part is finalized. Otherwise, we will refine it further.\n\n"
+        "that part is finalised. Otherwise, we will refine it further.\n\n"
         "Remember to keep the conversation focused, as we are limiting conversation length. "
         "If you need previous context, let me know."
     )
 
-    # Initialize root conversation
+    # Initialise root conversation
     branch_name = "root"
     if not conv_manager.get_conversation(branch_name):
         # Add a system message first
         system_message = (
-            "You are ChatGPT. You will interact with the user to clarify requirements "
+            "You are an analyst programmer. You will interact with the user to clarify requirements "
             "and progressively produce a large software application in small pieces."
         )
         conv_manager.update_conversation(branch_name, "system", system_message)
 
+    # Kick off recursion
     await recursive_prompt(
         conv_manager=conv_manager,
         user_prompt=root_prompt,

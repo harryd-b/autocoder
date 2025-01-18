@@ -3,25 +3,95 @@
 recursive_builder.py
 
 Main logic for the recursive, piecewise code generation process.
+By default, uses a local Triton server for Meta-Llama-3-8B on port 8000,
+but can switch to OpenAI if config.yaml sets 'model_source: openai'.
 """
 
 import logging
 import re
 import asyncio
 import random
-from typing import Dict, List, Any
+from typing import Dict, List
 
 from conversation_manager import ConversationManager
-from api_utils import call_openai_chat_completion, GPT_MODEL
 from verification import (
     verify_code_with_chatgpt,
     run_tests_on_code,
     run_lint_checks
 )
+from api_utils import (
+    call_openai_chat_completion,
+    call_local_llama_inference,
+    GPT_MODEL,
+    config
+)
+
+###############################################################################
+# MODEL-CALLING LOGIC
+###############################################################################
+DEFAULT_MODEL_SOURCE = config.get("model_source", "local")  # "local" or "openai"
+
+def call_model(conversation_history: List[Dict[str, str]]) -> dict:
+    """
+    Calls either the local Triton Llama or the OpenAI endpoint, depending on 'model_source' in config.yaml.
+    Returns a response dict formatted similarly to the OpenAI ChatCompletion response:
+      {
+        "choices": [
+          {
+            "message": {
+              "content": "<assistant response text>"
+            }
+          }
+        ]
+      }
+    """
+
+    if DEFAULT_MODEL_SOURCE.lower() == "openai":
+        # Use OpenAI API directly
+        response = call_openai_chat_completion(conversation_history, model=GPT_MODEL)
+        return response
+
+    else:
+        # Default: local Triton server
+        # Flatten the conversation into a single prompt string.
+        # We combine roles (user/assistant) for context, but only the last user message
+        # truly matters for the final request. You can adjust the flattening logic as needed.
+        flattened_prompt = []
+        for msg in conversation_history:
+            role = msg["role"].upper()
+            content = msg["content"]
+            flattened_prompt.append(f"{role}:\n{content}\n")
+
+        # Combine into a single string to send to local inference
+        prompt_text = "\n".join(flattened_prompt).strip()
+
+        # Use the local call, sending a single-element list for a single "chat" prompt
+        local_responses = call_local_llama_inference([prompt_text])
+
+        # If we got something back, adapt it into an OpenAI-like structure
+        if local_responses:
+            assistant_text = local_responses[0]  # For a single prompt, we have one output
+        else:
+            assistant_text = ""
+
+        # Return a dict that mimics the OpenAI response structure
+        return {
+            "choices": [
+                {
+                    "message": {
+                        "content": assistant_text
+                    }
+                }
+            ]
+        }
+
+###############################################################################
+# EXTRACTION & SAVING HELPERS
+###############################################################################
 
 def extract_questions_and_code(response_text: str) -> Dict[str, List[str]]:
     """
-    Parses the response from ChatGPT and attempts to extract clarifying questions and code blocks.
+    Parses the response text and attempts to extract clarifying questions and code blocks.
     Returns a dict:
       {
         "questions": [...],
@@ -54,6 +124,10 @@ def save_code_locally(code_str: str, file_path: str) -> None:
     except Exception as e:
         logging.error(f"Failed to save code to {file_path}: {e}")
 
+###############################################################################
+# REFINEMENT STEPS
+###############################################################################
+
 async def refine_incomplete_code(
     conv_manager: ConversationManager,
     branch_name: str,
@@ -64,7 +138,7 @@ async def refine_incomplete_code(
     """
     Feed back the verifier's feedback to the main conversation to request improvements.
     """
-    logging.info("Refining incomplete code snippet based on verifier feedback.")
+    logging.info("Refining incomplete code snippet based on verifier feedback...")
 
     refine_prompt = (
         "We received the following feedback from a verification step:\n\n"
@@ -75,37 +149,36 @@ async def refine_incomplete_code(
     )
 
     conv_manager.update_conversation(branch_name, "user", refine_prompt)
-
-    # Ask ChatGPT for an improved snippet
     conversation_history = conv_manager.get_conversation(branch_name)
-    response = call_openai_chat_completion(conversation_history, model=GPT_MODEL)
+
+    # Call the model (local or OpenAI) for improved snippet
+    response = call_model(conversation_history)
     improvement_response = response["choices"][0]["message"]["content"]
     conv_manager.update_conversation(branch_name, "assistant", improvement_response)
 
-    # Extract improved code
     parsed = extract_questions_and_code(improvement_response)
     if not parsed["code_blocks"]:
-        logging.warning("ChatGPT did not return improved code snippet in refinement step.")
+        logging.warning("No improved code snippet returned in refinement step.")
         return
 
     improved_code = parsed["code_blocks"][0]
     file_name = f"{branch_name}_refined_{code_index}.py"
 
-    # Re-verify improved code
     verification_data = verify_code_with_chatgpt(improved_code)
     if verification_data and verification_data.get("complete") is True:
-        # Save code
         save_code_locally(improved_code, file_name)
-        # Lint check
         lint_ok = run_lint_checks(file_name)
-        # Run tests
         tests_ok = run_tests_on_code(file_name)
         if lint_ok and tests_ok:
             logging.info(f"Refined code verified successfully: {file_name}")
         else:
             logging.warning(f"Refined code has lint/test issues: {file_name}")
     else:
-        logging.warning(f"Code snippet {file_name} is still incomplete after refinement.")
+        logging.warning(f"Snippet still incomplete after refinement: {file_name}")
+
+###############################################################################
+# QUESTION HANDLING
+###############################################################################
 
 async def handle_question(
     conv_manager: ConversationManager,
@@ -115,17 +188,25 @@ async def handle_question(
     max_depth: int
 ):
     """
-    Handles a single clarifying question. 
-    In a real scenario, you'd wait for user input. Here, we simulate an 'auto-answer'.
+    Handles a single clarifying question by prompting the user for input in real time.
+    Once the user provides their answer, it is appended to the conversation, and we
+    recursively call 'recursive_prompt' to continue code generation or further questions.
     """
     if depth > max_depth:
         logging.warning("Reached max recursion depth while handling question.")
         return
 
-    # Simulate user input
-    user_answer = f"Auto-answer for '{question_text}' (simulated)."
+    # Prompt the user interactively. Since we're in an async function, we use asyncio.to_thread
+    # so as not to block the event loop.
+    user_answer = await asyncio.to_thread(
+        input,
+        f"\nCHATGPT ASKED: {question_text}\nYour answer: "
+    )
+
+    # Update the conversation with the user's real answer
     conv_manager.update_conversation(branch_name, "user", user_answer)
 
+    # Continue the recursion from here
     await recursive_prompt(
         conv_manager=conv_manager,
         user_prompt=user_answer,
@@ -133,6 +214,11 @@ async def handle_question(
         depth=depth,
         max_depth=max_depth
     )
+
+
+###############################################################################
+# RECURSIVE LOGIC
+###############################################################################
 
 async def recursive_prompt(
     conv_manager: ConversationManager,
@@ -142,34 +228,26 @@ async def recursive_prompt(
     max_depth: int
 ) -> None:
     """
-    Recursively gather requirements and generate code from ChatGPT.
-
-    :param conv_manager: A ConversationManager instance
-    :param user_prompt: The latest user input to feed ChatGPT
-    :param branch_name: A label for the conversation context
-    :param depth: Current recursion level
-    :param max_depth: Maximum allowed recursion depth
+    Recursively gather requirements and generate code from ChatGPT or local Llama,
+    verifying each snippet, refining if incomplete, and following up on questions.
     """
     if depth > max_depth:
         logging.warning(f"Max recursion depth ({max_depth}) reached. Stopping.")
         return
 
-    # Add user prompt to conversation
     conv_manager.update_conversation(branch_name, "user", user_prompt)
-
-    # Call ChatGPT
     conversation_history = conv_manager.get_conversation(branch_name)
-    response = call_openai_chat_completion(conversation_history, model=GPT_MODEL)
+
+    # Call the model (local or OpenAI)
+    response = call_model(conversation_history)
     assistant_response = response["choices"][0]["message"]["content"].strip()
     if not assistant_response:
-        logging.warning("Received empty response from ChatGPT.")
+        logging.warning("Received empty response from the model.")
         return
 
     conv_manager.update_conversation(branch_name, "assistant", assistant_response)
+    logging.info(f"[BRANCH={branch_name}] Model says:\n{assistant_response}\n")
 
-    logging.info(f"[BRANCH={branch_name}] ChatGPT says:\n{assistant_response}\n")
-
-    # Extract questions and code from response
     parsed = extract_questions_and_code(assistant_response)
     questions = parsed["questions"]
     code_blocks = parsed["code_blocks"]
@@ -179,8 +257,9 @@ async def recursive_prompt(
     loop = asyncio.get_event_loop()
 
     for code_index, code_snippet in enumerate(code_blocks):
+        # Spin off verification calls in an executor
         verification_tasks.append(loop.run_in_executor(
-            None,  # default executor
+            None,
             verify_code_with_chatgpt,
             code_snippet
         ))
@@ -196,17 +275,12 @@ async def recursive_prompt(
 
         complete_flag = verification_data.get("complete", False)
         feedback = verification_data.get("feedback", "No feedback provided.")
-
         file_name = f"{branch_name}_part{i}.py"
 
         if complete_flag:
-            # Save code
             save_code_locally(code_snippet, file_name)
-            # Run lint checks
             lint_ok = run_lint_checks(file_name)
-            # Run tests
             tests_ok = run_tests_on_code(file_name)
-
             if lint_ok and tests_ok:
                 logging.info(f"Code snippet verified and tests passed: {file_name}")
             else:
@@ -214,8 +288,6 @@ async def recursive_prompt(
         else:
             logging.info(f"Code snippet {file_name} is incomplete or has issues.")
             logging.info(f"Verifier feedback: {feedback}")
-
-            # Refine code
             await refine_incomplete_code(
                 conv_manager=conv_manager,
                 branch_name=branch_name,
@@ -224,12 +296,13 @@ async def recursive_prompt(
                 code_index=i
             )
 
-    # Handle clarifying questions with concurrency (example approach)
-    # We'll push each question into an async task queue so they can be processed concurrently.
+    # Handle clarifying questions in parallel
     question_tasks = []
     for i, question in enumerate(questions):
         new_branch = f"{branch_name}_Q{i}"
-        question_tasks.append(handle_question(conv_manager, question, new_branch, depth + 1, max_depth))
+        question_tasks.append(
+            handle_question(conv_manager, question, new_branch, depth + 1, max_depth)
+        )
 
     if question_tasks:
         await asyncio.gather(*question_tasks)

@@ -1,5 +1,7 @@
+model_source: local
+# model_source: openai
 model: "gpt-4"
-
+triton_model_name: "meta-llama_Meta-Llama-3-8B"
 max_depth: 10
 max_conversation_length: 10
 max_retries: 3
