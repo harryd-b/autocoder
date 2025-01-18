@@ -56,15 +56,17 @@ async def test_recursive_prompt_basic_flow(
 
 
 @pytest.mark.asyncio
+@patch("recursive_builder.DEFAULT_MODEL_SOURCE", new="openai")
 @patch("recursive_builder.verify_code_with_chatgpt")
 @patch("recursive_builder.run_lint_checks")
 @patch("recursive_builder.run_tests_on_code")
-@patch("builtins.input", return_value="Test user answer")
-async def test_recursive_prompt_question_flow(
-    mock_input,
+@patch("recursive_builder.call_openai_chat_completion")
+async def test_recursive_prompt_basic_flow(
+    mock_api,
     mock_tests,
     mock_lint,
-    mock_verify
+    mock_verify,
+    _patched_model_source
 ):
     """
     Tests a scenario where the model returns both code and a clarifying question.

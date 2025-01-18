@@ -17,10 +17,15 @@ from api_utils import OpenAIAPIError, LocalLLMError
 @patch("verification.call_openai_chat_completion")
 def test_verify_code_with_chatgpt_success(mock_api):
     mock_api.return_value = {
-        "choices": [
-            {"message": {"content": '{"complete": true, "feedback": "All good"}'}}
-        ]
-    }
+    "choices": [
+        {
+            "message": {
+                "content": "{\"complete\": true, \"feedback\": \"All good\"}"
+            }
+        }
+    ]
+}
+
     code = "print('Hello')"
     result = verify_code_with_chatgpt(code)
     assert result["complete"] is True
