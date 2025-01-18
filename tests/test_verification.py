@@ -13,16 +13,23 @@ from api_utils import OpenAIAPIError, LocalLLMError
 ###############################################################################
 # Tests for verify_code_with_chatgpt (OpenAI path)
 ###############################################################################
-
+@patch("verification.call_openai_chat_completion")
 def test_verify_code_with_chatgpt_success(mock_api):
-    # EXACT JSON object, no trailing data
+    """
+    Test a scenario where the verification returns a valid JSON object,
+    ensuring we parse it properly.
+    """
+    # Must be a single valid JSON object, no extra data
     mock_api.return_value = {
-        "choices": [{
-            "message": {
-                "content": '{"complete":true,"feedback":"All good"}'
+        "choices": [
+            {
+                "message": {
+                    "content": '{"complete":true,"feedback":"All good"}'
+                }
             }
-        }]
+        ]
     }
+
     code = "print('Hello')"
     result = verify_code_with_chatgpt(code)
     assert result is not None

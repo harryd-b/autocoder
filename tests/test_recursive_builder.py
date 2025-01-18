@@ -72,13 +72,13 @@ async def test_recursive_prompt_question_flow(
     mock_call_model
 ):
     """
-    Tests a scenario where the model returns both code and a clarifying question.
-    We patch 'input' to simulate real user input. We also verify that the user answer
-    is appended to the conversation and triggers another recursion step.
+    Tests a scenario where the model returns both code and a clarifying question
+    on separate lines. We patch 'input' to simulate real user input. We also
+    verify that the user answer is appended to the conversation and triggers
+    another recursion step.
     """
-    # We'll simulate the first call to the model returning:
-    # 1) A code snippet
-    # 2) A clarifying question
+
+    # The question is on its own line, ending with '?'
     first_mock_response = {
         "choices": [{
             "message": {
@@ -90,8 +90,7 @@ async def test_recursive_prompt_question_flow(
         }]
     }
 
-    # For the second call (answering the clarifying question),
-    # we'll simulate a simple response with another code snippet
+    # Second response with another snippet after user answers
     second_mock_response = {
         "choices": [{
             "message": {
@@ -100,21 +99,19 @@ async def test_recursive_prompt_question_flow(
         }]
     }
 
-    # call_model yields two different responses on consecutive calls
+    # call_model yields these two responses consecutively
     mock_call_model.side_effect = [first_mock_response, second_mock_response]
 
-    # Patch run_lint_checks / run_tests_on_code to return True
+    # Lint/tests pass, verification is always complete
     mock_lint.return_value = True
     mock_tests.return_value = True
-
-    # Patch verification so that we always say "complete": True
     mock_verify.return_value = {"complete": True, "feedback": "All good"}
 
     cm = ConversationManager()
     branch_name = "question_test_branch"
-
     cm.update_conversation(branch_name, "system", "System prompt")
 
+    # Run
     await recursive_prompt(
         conv_manager=cm,
         user_prompt="Initial user prompt for question scenario",
@@ -123,16 +120,14 @@ async def test_recursive_prompt_question_flow(
         max_depth=3
     )
 
-    # Let's see what happened in conversation history
     history = cm.get_conversation(branch_name)
 
     # Expect at least:
-    #  - system message
-    #  - user message (initial prompt)
-    #  - assistant response (with code + question)
-    #  - user answer (the "Test user answer" we patched in)
-    #  - assistant response #2 (some final snippet)
-    # => total 5 or more messages
+    # 1) system message
+    # 2) user message
+    # 3) assistant response (with code + question)
+    # 4) user answer (the "Test user answer")
+    # 5) second assistant response
     assert len(history) >= 5
 
     # Check that the clarifying question led to user input
@@ -140,12 +135,11 @@ async def test_recursive_prompt_question_flow(
     assert any("Test user answer" in msg["content"] for msg in user_entries)
 
     # call_model was called twice:
-    # 1st: for the initial prompt
-    # 2nd: after user answered the clarifying question
+    # 1) the initial prompt
+    # 2) after user answered the question
     assert mock_call_model.call_count == 2
 
-    # verification called for both code snippets
-    # => 2 total code blocks
+    # verification was called for both snippets => 2 total code blocks
     assert mock_verify.call_count == 2
 
 
