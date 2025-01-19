@@ -103,6 +103,7 @@ def extract_questions_and_code(response_text: str) -> Dict[str, List[str]]:
 
     lines = response_text.split("\n")
     for line in lines:
+        print(f"DEBUG: line={repr(line)} endswith('?')={line.strip().endswith('?')}")
         if line.strip().endswith("?"):
             questions.append(line.strip())
 

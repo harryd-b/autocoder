@@ -86,12 +86,15 @@ async def test_recursive_prompt_question_flow(
             "message": {
                 "content": (
                     "Here is some code:\n"
-                    "```python\nprint('Hello')\n```\n\n"  # extra blank line
+                    "```python\nprint('Hello')\n```\n"
                     "And a question?\n"
                 )
             }
         }]
     }
+    
+    # Right after we set first_mock_response:
+    print("Assistant text:", first_mock_response["choices"][0]["message"]["content"])
 
     # Second response after user answers
     second_mock_response = {
