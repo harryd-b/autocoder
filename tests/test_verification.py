@@ -15,7 +15,7 @@ from api_utils import OpenAIAPIError, LocalLLMError
 ###############################################################################
 @patch("verification.call_openai_chat_completion")
 @patch("verification.DEFAULT_MODEL_SOURCE", new="openai")
-def test_verify_code_with_chatgpt_success(mock_call, _patched_source):
+def test_verify_code_with_chatgpt_success(mock_call):
     """
     Test a scenario where the verification returns a valid JSON object,
     ensuring we parse it properly.
