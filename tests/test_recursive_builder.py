@@ -52,9 +52,9 @@ async def test_recursive_prompt_basic_flow(
     )
 
     history = cm.get_conversation(branch_name)
-    # Ensure new messages were appended
-    assert len(history) >= 3  # system, user, assistant
-    # Check that we attempted to verify the code
+    # We expect at least 3 messages: system, user, assistant
+    assert len(history) >= 3
+    # Code snippet was verified once
     mock_verify.assert_called_once()
 
 
@@ -78,20 +78,22 @@ async def test_recursive_prompt_question_flow(
     another recursion step.
     """
 
-    # Ensure the question line ends with '?' and is followed by a newline,
-    # so extract_questions_and_code sees it as a separate line.
+    # Important: Ensure the question is truly on its own line.
+    # One good approach: Put an extra blank line after the code block
+    # so that "And a question?" is definitely on a separate line.
     first_mock_response = {
         "choices": [{
             "message": {
                 "content": (
-                    "Here is some code: ```python\nprint('Hello')\n```\n"
-                    "And a question?\n"  # Make sure there's no trailing spaces before '?'.
+                    "Here is some code:\n"
+                    "```python\nprint('Hello')\n```\n\n"  # extra blank line
+                    "And a question?\n"
                 )
             }
         }]
     }
 
-    # Another snippet after the user answers
+    # Second response after user answers
     second_mock_response = {
         "choices": [{
             "message": {
@@ -100,10 +102,9 @@ async def test_recursive_prompt_question_flow(
         }]
     }
 
-    # Model calls return these two responses in sequence
+    # Return the two responses in sequence
     mock_call_model.side_effect = [first_mock_response, second_mock_response]
 
-    # Verification is always "complete"
     mock_lint.return_value = True
     mock_tests.return_value = True
     mock_verify.return_value = {"complete": True, "feedback": "All good"}
@@ -112,7 +113,6 @@ async def test_recursive_prompt_question_flow(
     branch_name = "question_test_branch"
     cm.update_conversation(branch_name, "system", "System prompt")
 
-    # Run with initial user prompt
     await recursive_prompt(
         conv_manager=cm,
         user_prompt="Initial user prompt for question scenario",
@@ -123,22 +123,22 @@ async def test_recursive_prompt_question_flow(
 
     history = cm.get_conversation(branch_name)
 
-    # Expect at least:
+    # We expect at least 5 messages:
     #  1) system
     #  2) user prompt
-    #  3) assistant response (with code + question)
-    #  4) user answer (the "Test user answer")
+    #  3) assistant (code + question)
+    #  4) user answer ("Test user answer")
     #  5) second assistant snippet
     assert len(history) >= 5
 
-    # Check user input was appended
+    # The question led to user input
     user_entries = [msg for msg in history if msg["role"] == "user"]
     assert any("Test user answer" in msg["content"] for msg in user_entries)
 
-    # call_model should have been called twice
+    # call_model was called for the initial prompt + after user answered
     assert mock_call_model.call_count == 2
 
-    # Two code snippets => verify_code_with_chatgpt called twice
+    # We had two code snippets => verify_code_with_chatgpt called twice
     assert mock_verify.call_count == 2
 
 
