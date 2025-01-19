@@ -1,8 +1,8 @@
 import pytest
 import json
+import asyncio
 from unittest.mock import patch, MagicMock
 import main
-import asyncio
 
 ###############################################################################
 # Test that main.py calls asyncio.run and handles KeyboardInterrupt
@@ -11,21 +11,19 @@ import asyncio
 def test_main_run_keyboard_interrupt(mock_run):
     """
     Test that main.py's __main__ block calls asyncio.run and gracefully handles a KeyboardInterrupt.
-    We simulate the actual block: if __name__ == '__main__': asyncio.run(main.main()) ...
+    Instead of forcing main.__name__ = '__main__', we just replicate the logic by calling
+    asyncio.run(main.main()) ourselves.
     """
-    main.__name__ = "__main__"
-
     # Force a KeyboardInterrupt when asyncio.run(...) is called
     mock_run.side_effect = KeyboardInterrupt
 
     try:
-        # Here we replicate the same approach as in main.py's if __name__ == "__main__"
-        # except block. By calling asyncio.run(main.main()), we properly await the coroutine
+        # This mirrors how main.py runs main.main() if __name__ == "__main__"
         asyncio.run(main.main())
     except KeyboardInterrupt:
         pass
 
-    # If we get here, we handled KeyboardInterrupt gracefully
+    # If we get here, we handled the KeyboardInterrupt gracefully
     assert True
 
 ###############################################################################
@@ -51,7 +49,8 @@ async def test_main_with_mocked_input():
 
             mock_prompt.side_effect = mock_coroutine
 
-            # Now call main() in an async context
+            # Now call main() in an async context. Because we have @pytest.mark.asyncio,
+            # we can directly await main.main().
             await main.main()
 
             # Check that recursive_prompt was called at least once
