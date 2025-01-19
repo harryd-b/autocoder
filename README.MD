@@ -65,7 +65,8 @@ Copy
    ```bash
    git clone https://github.com/harryd-b/autocoder.git
    cd my_recursive_code_builder
-Create a Virtual Environment (Recommended)
+
+## Create a Virtual Environment (Recommended)
 
 bash
 Copy
@@ -78,7 +79,7 @@ Copy
 pip install -r requirements.txt
 Typically includes openai, tritonclient[http], tenacity, PyYAML, flake8, pytest, etc.
 
-Configure Your Model
+## Configure Your Model
 
 If using model_source: openai, sign up for an OpenAI API key.
 If using a locally hosted model on Triton, ensure Triton is running on port 8000.

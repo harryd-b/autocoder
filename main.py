@@ -3,7 +3,8 @@
 main.py
 
 Entry point for the Recursive Code Builder application.
-Now uses real user input to answer clarifying questions.
+Now requests a root prompt from the user interactively,
+then uses real user input to answer clarifying questions.
 """
 
 import asyncio
@@ -31,33 +32,38 @@ async def main():
 
     # Initialise conversation manager
     conv_manager = ConversationManager()
-
-    # Provide a top-level prompt
-    root_prompt = (
-        "I want to build a complex software application. "
-        "Please ask clarifying questions until you have all the details necessary "
-        "to produce the code in segments. Each time you have enough details for a "
-        "part of the application, produce the code for that part. Then we will verify "
-        "it in a separate conversation to ensure completeness. If verified as complete, "
-        "that part is finalised. Otherwise, we will refine it further.\n\n"
-        "Remember to keep the conversation focused, as we are limiting conversation length. "
-        "If you need previous context, let me know."
-    )
-
-    # Initialise root conversation
     branch_name = "root"
+
+    # If this branch doesn't have a conversation yet, set a system message
     if not conv_manager.get_conversation(branch_name):
-        # Add a system message first
         system_message = (
-            "You are an analyst programmer. You will interact with the user to clarify requirements "
-            "and progressively produce a large software application in small pieces."
+            "You are an analyst programmer. You will interact with the user to clarify "
+            "requirements and progressively produce a large software application in small pieces."
         )
         conv_manager.update_conversation(branch_name, "system", system_message)
+
+    # Prompt the user for the root prompt interactively
+    print("\nPlease enter the root prompt describing the software application you want to build.")
+    print("For example: 'I want to build a multi-tier web app with Django and React...'")
+    user_root_prompt = await asyncio.to_thread(input, "\nRoot Prompt > ")
+
+    # If the user didn't type anything, fall back to a default
+    if not user_root_prompt.strip():
+        user_root_prompt = (
+            "I want to build a complex software application. "
+            "Please ask clarifying questions until you have all the details necessary "
+            "to produce the code in segments. Each time you have enough details for a "
+            "part of the application, produce the code for that part. Then we will verify "
+            "it in a separate conversation to ensure completeness. If verified as complete, "
+            "that part is finalised. Otherwise, we will refine it further.\n\n"
+            "Remember to keep the conversation focused, as we are limiting conversation length. "
+            "If you need previous context, let me know."
+        )
 
     # Kick off recursion
     await recursive_prompt(
         conv_manager=conv_manager,
-        user_prompt=root_prompt,
+        user_prompt=user_root_prompt,
         branch_name=branch_name,
         depth=0,
         max_depth=max_depth
