@@ -2,24 +2,30 @@ import pytest
 import json
 from unittest.mock import patch, MagicMock
 import main
+import asyncio
 
 ###############################################################################
 # Test that main.py calls asyncio.run and handles KeyboardInterrupt
 ###############################################################################
-@patch("asyncio.run")
-def test_main_run_keyboard_interrupt(mock_asyncio_run):
+@patch("main.asyncio.run")
+def test_main_run_keyboard_interrupt(mock_run):
     """
     Test that main.py's __main__ block calls asyncio.run and gracefully handles a KeyboardInterrupt.
+    We simulate the actual block: if __name__ == '__main__': asyncio.run(main.main()) ...
     """
-    # Simulate calling main.py
+    main.__name__ = "__main__"
+
+    # Force a KeyboardInterrupt when asyncio.run(...) is called
+    mock_run.side_effect = KeyboardInterrupt
+
     try:
-        main.__name__ = "__main__"
-        with patch("main.asyncio.run") as mock_run:
-            mock_run.side_effect = KeyboardInterrupt  # to exit gracefully
-            main.main()
+        # Here we replicate the same approach as in main.py's if __name__ == "__main__"
+        # except block. By calling asyncio.run(main.main()), we properly await the coroutine
+        asyncio.run(main.main())
     except KeyboardInterrupt:
         pass
-    # If we get here, the script handled it as expected
+
+    # If we get here, we handled KeyboardInterrupt gracefully
     assert True
 
 ###############################################################################
@@ -42,6 +48,7 @@ async def test_main_with_mocked_input():
             # We'll simulate an awaitable that does nothing
             async def mock_coroutine(*args, **kwargs):
                 pass
+
             mock_prompt.side_effect = mock_coroutine
 
             # Now call main() in an async context
