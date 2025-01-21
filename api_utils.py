@@ -4,11 +4,13 @@ api_utils.py
 
 Handles:
 1. OpenAI API interactions (with retries and error handling).
-2. Local Triton server calls to Meta-Llama-3-8B on port 8000 (or as configured),
+2. DeepSeek-Reasoner API interactions (OpenAI-compatible endpoint)
+3. Local Triton server calls to Meta-Llama-3-8B on port 8000 (or as configured),
    also with retries and batch prompt support.
 
 Usage:
 - For OpenAI calls, use call_openai_chat_completion(messages).
+- For DeepSeek calls, use call_deepseek_chat_completion(messages).
 - For local Llama calls, use call_local_llama_inference(prompts).
 """
 
@@ -34,6 +36,10 @@ class OpenAIAPIError(Exception):
     """Custom exception for OpenAI API errors."""
     pass
 
+class DeepSeekAPIError(Exception):
+    """Custom exception for DeepSeek API errors."""
+    pass
+
 class LocalLLMError(Exception):
     """Custom exception for local Llama Triton server errors."""
     pass
@@ -42,27 +48,33 @@ class LocalLLMError(Exception):
 with open("config.yaml", "r", encoding="utf-8") as f:
     config = yaml.safe_load(f)
 
-# OpenAI settings
+# API settings
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-if not OPENAI_API_KEY:
-    raise ValueError("No OPENAI_API_KEY found in .env")
+DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY")
 
-openai.api_key = OPENAI_API_KEY
-GPT_MODEL = config.get("model", "gpt-3.5-turbo")
+# Model configurations
+GPT_MODEL = config.get("openai_model", "gpt-3.5-turbo")
+DEEPSEEK_MODEL = config.get("deepseek_model", "deepseek-reasoner")
+DEEPSEEK_BASE_URL = config.get("deepseek_base_url", "https://api.deepseek.com/v1")
 
 # Triton settings
-# Default to "localhost:8000" if not specified
 LOCAL_TRITON_URL = os.getenv("LOCAL_TRITON_URL", "localhost:8000")
-# Default model name for your Llama on Triton
 TRITON_MODEL_NAME = config.get("triton_model_name", "meta-llama_Meta-Llama-3-8B")
 
-# Retry / backoff settings
+# Retry/backoff settings
 MAX_RETRIES = config.get("max_retries", 3)
 RETRY_BASE_SECONDS = config.get("retry_base_seconds", 1.5)
 RETRY_MAX_SECONDS = config.get("retry_max_seconds", 10)
 
+# Initialize API clients
+openai_client = openai.OpenAI(api_key=OPENAI_API_KEY) if OPENAI_API_KEY else None
+deepseek_client = openai.OpenAI(
+    api_key=DEEPSEEK_API_KEY,
+    base_url=DEEPSEEK_BASE_URL
+) if DEEPSEEK_API_KEY else None
+
 ###############################################################################
-# 1. OpenAI ChatCompletion with retries
+# 1. OpenAI ChatCompletion
 ###############################################################################
 
 @retry(
@@ -74,14 +86,12 @@ RETRY_MAX_SECONDS = config.get("retry_max_seconds", 10)
 def call_openai_chat_completion(messages: list[dict], model: str = GPT_MODEL) -> dict:
     """
     Calls the OpenAI ChatCompletion API with retry logic.
-    Raises OpenAIAPIError on failure.
-
-    :param messages: The conversation history as a list of {"role": str, "content": str}
-    :param model: The OpenAI model to use.
-    :return: The OpenAI API response (as a dict).
     """
+    if not openai_client:
+        raise OpenAIAPIError("OpenAI client not initialized - check API key")
+
     try:
-        response = openai.ChatCompletion.create(
+        response = openai_client.chat.completions.create(
             model=model,
             messages=messages
         )
@@ -91,7 +101,34 @@ def call_openai_chat_completion(messages: list[dict], model: str = GPT_MODEL) ->
         raise OpenAIAPIError(str(e)) from e
 
 ###############################################################################
-# 2. Local Triton Llama inference with retries
+# 2. DeepSeek ChatCompletion
+###############################################################################
+
+@retry(
+    reraise=True,
+    wait=wait_exponential(multiplier=RETRY_BASE_SECONDS, max=RETRY_MAX_SECONDS),
+    stop=stop_after_attempt(MAX_RETRIES),
+    retry=retry_if_exception_type(DeepSeekAPIError)
+)
+def call_deepseek_chat_completion(messages: list[dict], model: str = DEEPSEEK_MODEL) -> dict:
+    """
+    Calls the DeepSeek ChatCompletion API with retry logic.
+    """
+    if not deepseek_client:
+        raise DeepSeekAPIError("DeepSeek client not initialized - check API key")
+
+    try:
+        response = deepseek_client.chat.completions.create(
+            model=model,
+            messages=messages
+        )
+        return response
+    except Exception as e:
+        logging.error("DeepSeek API call failed.", exc_info=True)
+        raise DeepSeekAPIError(str(e)) from e
+
+###############################################################################
+# 3. Local Triton Llama inference
 ###############################################################################
 
 @retry(
@@ -102,13 +139,7 @@ def call_openai_chat_completion(messages: list[dict], model: str = GPT_MODEL) ->
 )
 def call_local_llama_inference(prompts: list[str]) -> list[str]:
     """
-    Calls a local Triton server hosting Meta-Llama-3-8B on port 8000 (by default).
-    Sends a batch of prompts (shape [batch_size, 1]) and returns a list of generated texts.
-
-    Raises LocalLLMError on failure.
-
-    :param prompts: A list of prompt strings.
-    :return: A list of generated text outputs, one for each prompt.
+    Calls a local Triton server hosting Meta-Llama-3-8B.
     """
     try:
         client = httpclient.InferenceServerClient(url=LOCAL_TRITON_URL)
@@ -120,9 +151,7 @@ def call_local_llama_inference(prompts: list[str]) -> list[str]:
     if batch_size == 0:
         return []
 
-    # Numpy array of shape [batch_size, 1], dtype=object
     input_data = np.array(prompts, dtype=object).reshape(batch_size, 1)
-
     input_tensor = httpclient.InferInput("TEXT", [batch_size, 1], "BYTES")
     input_tensor.set_data_from_numpy(input_data)
 
@@ -141,51 +170,39 @@ def call_local_llama_inference(prompts: list[str]) -> list[str]:
         logging.error("Inference call failed.", exc_info=True)
         raise LocalLLMError(str(ex)) from ex
 
-    # Parse out the output
     out = results.as_numpy("GENERATED_TEXT")
-    if out is None:
-        logging.warning("No output from model.")
-        return []
-
-    outputs = []
-    for i in range(out.shape[0]):
-        val = out[i, 0]
-        # Might be bytes, so decode if needed
-        if isinstance(val, bytes):
-            val = val.decode("utf-8")
-        outputs.append(val)
-
-    return outputs
+    return [val.decode("utf-8") if isinstance(val, bytes) else val for val in out[:, 0]] if out is not None else []
 
 ###############################################################################
-# EXAMPLE USAGE (if run as a script)
+# EXAMPLE USAGE
 ###############################################################################
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
 
-    # 1. Test OpenAI call
-    messages_openai = [
-        {"role": "system", "content": "You are a helpful assistant."},
-        {"role": "user", "content": "Hello, how are you?"}
-    ]
+    # Test OpenAI
     try:
-        openai_response = call_openai_chat_completion(messages_openai)
-        logging.info(f"OpenAI response: {openai_response}")
+        openai_res = call_openai_chat_completion([
+            {"role": "user", "content": "Hello from OpenAI!"}
+        ])
+        logging.info(f"OpenAI Response: {openai_res.choices[0].message.content}")
     except OpenAIAPIError as e:
-        logging.error(f"Failed to get response from OpenAI: {e}")
+        logging.error(f"OpenAI Error: {e}")
 
-    # 2. Test local Llama inference
-    prompts_to_try = [
-        "Hello, can you explain what large language models are?",
-        "What is concurrency in computer science?",
-        "Please summarise the solar system."
-    ]
+    # Test DeepSeek
     try:
-        local_responses = call_local_llama_inference(prompts_to_try)
-        for i, resp in enumerate(local_responses):
-            logging.info(f"[Prompt {i}] => {resp}")
-    except LocalLLMError as e:
-        logging.error(f"Failed to get response from local Llama: {e}")
+        deepseek_res = call_deepseek_chat_completion([
+            {"role": "user", "content": "Hello from DeepSeek!"}
+        ])
+        logging.info(f"DeepSeek Response: {deepseek_res.choices[0].message.content}")
+    except DeepSeekAPIError as e:
+        logging.error(f"DeepSeek Error: {e}")
 
-    logging.info("Done.")
+    # Test Local Llama
+    try:
+        llama_res = call_local_llama_inference(["Hello from Llama!"])
+        logging.info(f"Llama Response: {llama_res[0]}")
+    except LocalLLMError as e:
+        logging.error(f"Llama Error: {e}")
+
+    logging.info("All tests complete.")

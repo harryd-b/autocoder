@@ -1,14 +1,25 @@
-model_source: local
-# model_source: openai
-model: "gpt-4"
-triton_model_name: "meta-llama_Meta-Llama-3-8B"
-max_depth: 10
-max_conversation_length: 10
-max_retries: 3
+# config.yaml
 
-# For tenacity-based retries
-retry_base_seconds: 1.5
-retry_max_seconds: 10
+# General configuration
+general:
+  model_source: deepseek  # Options: local, openai, deepseek
+  max_depth: 10           # Maximum conversation depth
+  max_conversation_length: 10  # Max messages to retain
+  max_retries: 3          # Max retry attempts for API calls
+  retry_base_seconds: 1.5 # Initial retry delay
+  retry_max_seconds: 10   # Maximum retry delay
+  conversation_file: "conversation_state.json"  # Conversation storage
 
-# Where to store conversation states
-conversation_file: "conversation_state.json"
+# OpenAI configuration
+openai:
+  model: "gpt-4"          # Default: "gpt-3.5-turbo"
+
+# DeepSeek configuration
+deepseek:
+  model: "deepseek-reasoner"  # Supported models: deepseek-reasoner, deepseek-math
+  base_url: "https://api.deepseek.com/v1"
+
+# Local Triton configuration
+local:
+  triton_url: "localhost:8000"  # Default Triton server URL
+  model_name: "meta-llama_Meta-Llama-3-8B"  # Model repository name
