@@ -14,6 +14,7 @@ import logging
 import os
 from typing import List, Dict
 import yaml
+from datetime import datetime
 
 with open("config.yaml", "r", encoding="utf-8") as f:
     config = yaml.safe_load(f)
@@ -59,15 +60,29 @@ class ConversationManager:
         """
         return self.conversations.get(branch_name, [])
 
+    def validate_message(self, role: str, content: str) -> None:
+        """Validates message parameters before adding to conversation."""
+        valid_roles = {"system", "user", "assistant"}
+        if role not in valid_roles:
+            raise ValueError(f"Invalid role: {role}. Must be one of {valid_roles}")
+        if not content or not isinstance(content, str):
+            raise ValueError("Content must be a non-empty string")
+
     def update_conversation(self, branch_name: str, role: str, content: str) -> None:
-        """
-        Appends a message (role + content) to a branch's conversation, applies a sliding window,
-        and saves the updated conversation.
-        """
+        """Appends a message with metadata to a branch's conversation."""
+        message = {
+            "role": role,
+            "content": content,
+            "timestamp": datetime.utcnow().isoformat(),
+            "message_id": len(self.conversations.get(branch_name, [])) + 1
+        }
+        
         if branch_name not in self.conversations:
             self.conversations[branch_name] = []
-        self.conversations[branch_name].append({"role": role, "content": content})
-        self.conversations[branch_name] = self.slide_conversation_window(self.conversations[branch_name])
+        self.conversations[branch_name].append(message)
+        self.conversations[branch_name] = self.slide_conversation_window(
+            self.conversations[branch_name]
+        )
         self.save_conversations()
 
     def slide_conversation_window(self, conversation_history: List[Dict[str, str]]) -> List[Dict[str, str]]:
@@ -104,3 +119,50 @@ class ConversationManager:
             content = msg["content"]
             lines.append(f"{role}:\n{content}\n")
         return "\n".join(lines).strip()
+
+    def delete_branch(self, branch_name: str) -> None:
+        """Deletes a conversation branch."""
+        if branch_name in self.conversations:
+            del self.conversations[branch_name]
+            self.save_conversations()
+        
+    def list_branches(self) -> List[str]:
+        """Returns list of all conversation branches."""
+        return list(self.conversations.keys())
+
+    def clear_branch(self, branch_name: str) -> None:
+        """Clears all messages from a branch except system message."""
+        if branch_name in self.conversations:
+            system_msgs = [msg for msg in self.conversations[branch_name] 
+                          if msg["role"] == "system"]
+            self.conversations[branch_name] = system_msgs
+            self.save_conversations()
+
+    def get_conversation_size(self, branch_name: str) -> int:
+        """Returns the total characters in a conversation branch."""
+        conversation = self.get_conversation(branch_name)
+        return sum(len(msg["content"]) for msg in conversation)
+
+    def cleanup_old_branches(self, max_branches: int = 100) -> None:
+        """Removes oldest branches if total exceeds max_branches."""
+        if len(self.conversations) > max_branches:
+            # Sort branches by last message timestamp
+            sorted_branches = sorted(
+                self.conversations.items(),
+                key=lambda x: x[1][-1].get("timestamp", "") if x[1] else "",
+                reverse=True
+            )
+            # Keep only max_branches most recent
+            self.conversations = dict(sorted_branches[:max_branches])
+            self.save_conversations()
+
+    def backup_conversations(self, backup_file: str = None) -> None:
+        """Creates a backup of the current conversation state."""
+        if backup_file is None:
+            backup_file = f"{CONVERSATION_FILE}.backup"
+        try:
+            with open(backup_file, "w", encoding="utf-8") as f:
+                json.dump(self.conversations, f, indent=2)
+            logging.info(f"Backup created at {backup_file}")
+        except Exception as e:
+            logging.error(f"Failed to create backup: {e}")

@@ -83,9 +83,22 @@ deepseek_client = openai.OpenAI(
     stop=stop_after_attempt(MAX_RETRIES),
     retry=retry_if_exception_type(OpenAIAPIError)
 )
-def call_openai_chat_completion(messages: list[dict], model: str = GPT_MODEL) -> dict:
+def call_openai_chat_completion(
+    messages: list[dict[str, str]], 
+    model: str = GPT_MODEL
+) -> openai.types.chat.ChatCompletion:
     """
     Calls the OpenAI ChatCompletion API with retry logic.
+    
+    Args:
+        messages: List of message dictionaries with 'role' and 'content'
+        model: OpenAI model identifier
+        
+    Returns:
+        OpenAI ChatCompletion response
+        
+    Raises:
+        OpenAIAPIError: If API call fails
     """
     if not openai_client:
         raise OpenAIAPIError("OpenAI client not initialized - check API key")
@@ -131,6 +144,8 @@ def call_deepseek_chat_completion(messages: list[dict], model: str = DEEPSEEK_MO
 # 3. Local Triton Llama inference
 ###############################################################################
 
+MAX_BATCH_SIZE = config.get('max_batch_size', 32)
+
 @retry(
     reraise=True,
     wait=wait_exponential(multiplier=RETRY_BASE_SECONDS, max=RETRY_MAX_SECONDS),
@@ -140,7 +155,19 @@ def call_deepseek_chat_completion(messages: list[dict], model: str = DEEPSEEK_MO
 def call_local_llama_inference(prompts: list[str]) -> list[str]:
     """
     Calls a local Triton server hosting Meta-Llama-3-8B.
+    
+    Args:
+        prompts: List of input prompts to process
+        
+    Returns:
+        List of generated responses
+        
+    Raises:
+        LocalLLMError: If inference fails
+        ValueError: If batch size exceeds limit
     """
+    if len(prompts) > MAX_BATCH_SIZE:
+        raise ValueError(f"Batch size {len(prompts)} exceeds maximum {MAX_BATCH_SIZE}")
     try:
         client = httpclient.InferenceServerClient(url=LOCAL_TRITON_URL)
     except Exception as e:
@@ -206,3 +233,17 @@ if __name__ == "__main__":
         logging.error(f"Llama Error: {e}")
 
     logging.info("All tests complete.")
+
+# After loading config
+def validate_config(config: dict) -> None:
+    """Validates the configuration values."""
+    required_fields = ['openai_model', 'deepseek_model', 'deepseek_base_url']
+    for field in required_fields:
+        if field not in config:
+            raise ValueError(f"Missing required config field: {field}")
+            
+    if config.get('max_retries', 0) < 1:
+        raise ValueError("max_retries must be positive")
+        
+# Add after config loading:
+validate_config(config)
