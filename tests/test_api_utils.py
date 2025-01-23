@@ -41,7 +41,7 @@ def mock_triton_response():
 # Tests for call_openai_chat_completion
 ###############################################################################
 
-@patch("openai.ChatCompletion.create")
+@patch("openai.resources.chat.Completions.create")
 def test_call_openai_chat_completion_success(mock_create, mock_openai_response):
     """
     Test a successful call to the OpenAI ChatCompletion API.
