@@ -36,9 +36,10 @@ async def main():
 
     # If this branch doesn't have a conversation yet, set a system message
     if not conv_manager.get_conversation(branch_name):
+        # Change this line in the main.py initialization:
         system_message = (
             "You are an analyst programmer. You will interact with the user to clarify "
-            "requirements and progressively produce a large software application in small pieces."
+            "requirements and PRODUCE CODE SNIPPETS IN TRIPLE BACKTICKS. Ask questions only when necessary."
         )
         conv_manager.update_conversation(branch_name, "system", system_message)
 

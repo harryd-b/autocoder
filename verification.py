@@ -89,8 +89,8 @@ def verify_code_with_chatgpt(
     """
     if verification_prompt is None:
         verification_prompt = (
-            "Please verify the following code snippet. "
-            "Respond in JSON with fields 'complete' (boolean) and 'feedback' (string)."
+            "Review this code snippet. Respond in JSON with 'complete' (true/false) and 'feedback' (string). "
+            "Example: {'complete': true, 'feedback': 'Looks good'}"
         )
 
     try:

@@ -73,39 +73,24 @@ def call_model(conversation_history: List[Dict[str, str]]) -> dict:
 
 def extract_questions_and_code(response_text: str) -> Dict[str, List[str]]:
     """
-    Parses the response text to find clarifying questions and code blocks.
-    Returns a dict:
-      {
-        "questions": [...],
-        "code_blocks": [...]
-      }
+    Improved parsing for code blocks and questions.
     """
     questions = []
     code_blocks = []
 
-    lines = response_text.split("\n")
-    for line in lines:
-        print(f"DEBUG: line={repr(line)} endswith('?')={line.strip().endswith('?')}")
-        if line.strip().endswith("?"):
-            questions.append(line.strip())
+    # Extract questions (lines ending with '?')
+    questions = [
+        line.strip() 
+        for line in response_text.split('\n') 
+        if line.strip().endswith('?')
+    ]
 
-    code_pattern = r"```(.*?)```"
+    # Extract code blocks (handle ```python and ```)
+    code_pattern = r"```(?:python)?\n(.*?)```"
     matches = re.findall(code_pattern, response_text, re.DOTALL)
-    for match in matches:
-        code_blocks.append(match.strip())
+    code_blocks = [match.strip() for match in matches]
 
     return {"questions": questions, "code_blocks": code_blocks}
-
-def save_code_locally(code_str: str, file_path: str) -> None:
-    """
-    Saves the given code string to a local file.
-    """
-    try:
-        with open(file_path, "w", encoding="utf-8") as f:
-            f.write(code_str)
-        logging.info(f"Code saved to: {file_path}")
-    except Exception as e:
-        logging.error(f"Failed to save code to {file_path}: {e}")
 
 ###############################################################################
 # REFINEMENT STEPS
