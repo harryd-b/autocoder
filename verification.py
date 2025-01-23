@@ -13,6 +13,7 @@ import json
 import logging
 import subprocess
 from typing import Any, Dict, Optional
+import os
 
 from api_utils import (
     GPT_MODEL,
@@ -121,8 +122,9 @@ def run_lint_checks(file_path: str) -> bool:
     :param file_path: Path to the Python file to lint
     :return: True if no lint errors, False otherwise
     """
+    full_path = os.path.join(OUTPUT_DIR, file_path)
     logging.info(f"Running flake8 lint checks on {file_path}")
-    cmd = ["flake8", file_path]
+    cmd = ["flake8", full_path]
     result = subprocess.run(cmd, capture_output=True, text=True)
 
     if result.returncode != 0:
@@ -138,9 +140,10 @@ def run_tests_on_code(file_path: str) -> bool:
     :param file_path: Path to the code file (unused in this simple example).
     :return: True if tests pass, False otherwise.
     """
-    logging.info(f"Running tests on {file_path} using pytest (placeholder).")
+    full_path = os.path.join(OUTPUT_DIR, file_path)
+    logging.info(f"Running tests on {full_path} using pytest (placeholder).")
     # Example: run pytest in current directory
-    cmd = ["pytest", "--maxfail=1", "--disable-warnings"]
+    cmd = ["pytest", full_path, "--maxfail=1", "--disable-warnings"]
     result = subprocess.run(cmd, capture_output=True, text=True)
 
     if result.returncode == 0:

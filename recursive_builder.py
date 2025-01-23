@@ -12,6 +12,10 @@ import re
 import asyncio
 import random
 from typing import Dict, List
+import os
+from datetime import datetime
+
+OUTPUT_DIR = "generated_code"
 
 from conversation_manager import ConversationManager
 from verification import (
@@ -25,6 +29,12 @@ from api_utils import (
     GPT_MODEL,
     config
 )
+
+def ensure_output_dir():
+    timestamp = datetime.now().strftime("%Y-%m-%d")
+    full_path = os.path.join(OUTPUT_DIR, timestamp)
+    os.makedirs(full_path, exist_ok=True)
+    return full_path
 
 ###############################################################################
 # MODEL-CALLING LOGIC
@@ -262,3 +272,13 @@ async def recursive_prompt(
     # 7) Handle clarifying questions (SEQUENTIALLY in the SAME branch)
     for question_text in questions:
         await handle_question(conv_manager, question_text, branch_name, depth + 1, max_depth)
+
+def save_code_locally(code_str: str, file_path: str) -> None:
+    output_dir = ensure_output_dir()  # Now returns dated path
+    full_path = os.path.join(output_dir, file_path)
+    try:
+        with open(full_path, "w", encoding="utf-8") as f:
+            f.write(code_str)
+        logging.info(f"Code saved to: {full_path}")
+    except Exception as e:
+        logging.error(f"Failed to save code to {full_path}: {e}")
