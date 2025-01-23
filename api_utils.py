@@ -53,18 +53,18 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY")
 
 # Model configurations
-GPT_MODEL = config.get("openai_model", "gpt-3.5-turbo")
-DEEPSEEK_MODEL = config.get("deepseek_model", "deepseek-reasoner")
-DEEPSEEK_BASE_URL = config.get("deepseek_base_url", "https://api.deepseek.com/v1")
+GPT_MODEL = config.get("openai", {}).get("model", "gpt-3.5-turbo")
+DEEPSEEK_MODEL = config.get("deepseek", {}).get("model", "deepseek-reasoner")
+DEEPSEEK_BASE_URL = config.get("deepseek", {}).get("base_url", "https://api.deepseek.com/v1")
 
 # Triton settings
-LOCAL_TRITON_URL = os.getenv("LOCAL_TRITON_URL", "localhost:8000")
-TRITON_MODEL_NAME = config.get("triton_model_name", "meta-llama_Meta-Llama-3-8B")
+LOCAL_TRITON_URL = os.getenv("LOCAL_TRITON_URL", config.get("local", {}).get("triton_url", "localhost:8000"))
+TRITON_MODEL_NAME = config.get("local", {}).get("model_name", "meta-llama_Meta-Llama-3-8B")
 
 # Retry/backoff settings
-MAX_RETRIES = config.get("max_retries", 3)
-RETRY_BASE_SECONDS = config.get("retry_base_seconds", 1.5)
-RETRY_MAX_SECONDS = config.get("retry_max_seconds", 10)
+MAX_RETRIES = config.get("general", {}).get("max_retries", 3)
+RETRY_BASE_SECONDS = config.get("general", {}).get("retry_base_seconds", 1.5)
+RETRY_MAX_SECONDS = config.get("general", {}).get("retry_max_seconds", 10)
 
 # Initialize API clients
 openai_client = openai.OpenAI(api_key=OPENAI_API_KEY) if OPENAI_API_KEY else None
@@ -100,6 +100,7 @@ def call_openai_chat_completion(
     Raises:
         OpenAIAPIError: If API call fails
     """
+    validate_config(config)  # Only validate when function is called
     if not openai_client:
         raise OpenAIAPIError("OpenAI client not initialized - check API key")
 
@@ -127,6 +128,7 @@ def call_deepseek_chat_completion(messages: list[dict], model: str = DEEPSEEK_MO
     """
     Calls the DeepSeek ChatCompletion API with retry logic.
     """
+    validate_config(config)  # Only validate when function is called
     if not deepseek_client:
         raise DeepSeekAPIError("DeepSeek client not initialized - check API key")
 
@@ -144,7 +146,7 @@ def call_deepseek_chat_completion(messages: list[dict], model: str = DEEPSEEK_MO
 # 3. Local Triton Llama inference
 ###############################################################################
 
-MAX_BATCH_SIZE = config.get('max_batch_size', 32)
+MAX_BATCH_SIZE = config.get('local', {}).get('max_batch_size', 32)
 
 @retry(
     reraise=True,
@@ -234,16 +236,22 @@ if __name__ == "__main__":
 
     logging.info("All tests complete.")
 
-# After loading config
 def validate_config(config: dict) -> None:
     """Validates the configuration values."""
-    required_fields = ['openai_model', 'deepseek_model', 'deepseek_base_url']
-    for field in required_fields:
-        if field not in config:
-            raise ValueError(f"Missing required config field: {field}")
+    # Check required sections exist
+    required_sections = ['general', 'openai', 'deepseek', 'local']
+    for section in required_sections:
+        if section not in config:
+            raise ValueError(f"Missing required config section: {section}")
+    
+    # Check specific required fields in each section
+    if 'model' not in config['openai']:
+        raise ValueError("Missing 'model' in openai config section")
+    if 'model' not in config['deepseek']:
+        raise ValueError("Missing 'model' in deepseek config section")
+    if 'base_url' not in config['deepseek']:
+        raise ValueError("Missing 'base_url' in deepseek config section")
             
-    if config.get('max_retries', 0) < 1:
+    # Validate retry settings
+    if config.get('general', {}).get('max_retries', 0) < 1:
         raise ValueError("max_retries must be positive")
-        
-# Add after config loading:
-validate_config(config)
