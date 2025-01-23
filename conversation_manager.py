@@ -14,7 +14,7 @@ import logging
 import os
 from typing import List, Dict
 import yaml
-from datetime import datetime
+from datetime import datetime, UTC
 
 with open("config.yaml", "r", encoding="utf-8") as f:
     config = yaml.safe_load(f)
@@ -73,7 +73,7 @@ class ConversationManager:
         message = {
             "role": role,
             "content": content,
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
             "message_id": len(self.conversations.get(branch_name, [])) + 1
         }
         

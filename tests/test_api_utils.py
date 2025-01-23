@@ -3,6 +3,7 @@ from unittest.mock import patch, MagicMock
 
 import numpy as np
 import requests
+import openai
 
 from api_utils import (
     call_openai_chat_completion,
@@ -45,10 +46,25 @@ def test_call_openai_chat_completion_success(mock_create, mock_openai_response):
     """
     Test a successful call to the OpenAI ChatCompletion API.
     """
-    mock_create.return_value = mock_openai_response
+    mock_create.return_value = openai.types.chat.ChatCompletion(
+        id="test_id",
+        choices=[{
+            "index": 0,
+            "message": {
+                "role": "assistant",
+                "content": "Hello, this is a mocked OpenAI response."
+            },
+            "finish_reason": "stop"
+        }],
+        created=1234567890,
+        model="gpt-3.5-turbo",
+        object="chat.completion",
+        usage={"prompt_tokens": 10, "completion_tokens": 20, "total_tokens": 30}
+    )
+    
     messages = [{"role": "user", "content": "Hi"}]
     response = call_openai_chat_completion(messages)
-    assert response == mock_openai_response
+    assert response.choices[0].message.content == "Hello, this is a mocked OpenAI response."
     mock_create.assert_called_once()
 
 @patch("openai.ChatCompletion.create")
